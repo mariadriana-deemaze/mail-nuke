@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -59,32 +60,87 @@ func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
 	return token
 }
 
+func extractSpammySenders() []string {
+	file, err := os.Open("mails.json")
+	if err != nil {
+		log.Fatalf("Failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	data, err := ioutil.ReadAll(file)
+	if err != nil {
+		log.Fatalf("Failed to read file: %v", err)
+	}
+
+	var emails []string
+	if err := json.Unmarshal(data, &emails); err != nil {
+		log.Fatalf("Failed to unmarshal JSON: %v", err)
+	}
+
+	return emails
+}
+
 func deleteEmailsBySenders(srv *gmail.Service, senders []string) {
 	user := "me"
+	batchSize := 1000 // Gmail API only allows up to 1000 message IDs per call
+
 	for _, sender := range senders {
 		query := fmt.Sprintf("from:%s", sender)
 		fmt.Printf("Searching for emails from: %s\n", sender)
 
-		messages, err := srv.Users.Messages.List(user).Q(query).Do()
-		if err != nil {
-			log.Printf("Unable to retrieve messages for sender %s: %v", sender, err)
-			continue
-		}
+		var pageToken string
+		var messageIDs []string
 
-		if len(messages.Messages) == 0 {
-			fmt.Printf("No messages found from %s\n", sender)
-			continue
-		}
+		for {
+			call := srv.Users.Messages.List(user).Q(query).MaxResults(500)
+			if pageToken != "" {
+				call = call.PageToken(pageToken)
+			}
 
-		for _, msg := range messages.Messages {
-			err := srv.Users.Messages.Delete(user, msg.Id).Do()
+			messages, err := call.Do()
 			if err != nil {
-				log.Printf("Unable to delete message ID %s: %v", msg.Id, err)
-			} else {
-				fmt.Printf("Deleted message ID %s from sender %s\n", msg.Id, sender)
+				log.Printf("Unable to retrieve messages for sender %s: %v", sender, err)
+				break
+			}
+
+			for _, msg := range messages.Messages {
+				messageIDs = append(messageIDs, msg.Id)
+				if len(messageIDs) >= batchSize {
+					err := batchDeleteMessages(srv, user, messageIDs)
+					if err != nil {
+						log.Printf("Error deleting messages for sender %s: %v", sender, err)
+					}
+					messageIDs = []string{}
+				}
+			}
+
+			pageToken = messages.NextPageToken
+			if pageToken == "" {
+				break
 			}
 		}
+
+		if len(messageIDs) > 0 {
+			err := batchDeleteMessages(srv, user, messageIDs)
+			if err != nil {
+				log.Printf("Error deleting remaining messages for sender %s: %v", sender, err)
+			}
+		}
+
+		fmt.Printf("Completed processing emails from: %s\n", sender)
 	}
+}
+
+func batchDeleteMessages(srv *gmail.Service, user string, messageIDs []string) error {
+	req := &gmail.BatchDeleteMessagesRequest{
+		Ids: messageIDs,
+	}
+	err := srv.Users.Messages.BatchDelete(user, req).Do()
+	if err != nil {
+		return fmt.Errorf("batch delete failed: %w", err)
+	}
+	fmt.Printf("Batch deleted %d messages\n", len(messageIDs))
+	return nil
 }
 
 func main() {
@@ -107,6 +163,7 @@ func main() {
 		log.Fatalf("Unable to create Gmail client: %v", err)
 	}
 
-	spammySenders := []string{"spammy@gmail.com"}
+	spammySenders := extractSpammySenders()
+
 	deleteEmailsBySenders(gmailService, spammySenders)
 }
