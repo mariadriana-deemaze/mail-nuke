@@ -1,3 +1,7 @@
+<div align="center">
+ <img src="preview.png" />
+</div>
+
 # MailNuke
 
 `mail_nuke` is a Go program that helps users clean up their Gmail inboxes by removing unwanted emails from specific senders. It does this by interacting with the Gmail API, allowing users to authorize the application and delete emails from spammy or unwanted sources.
@@ -44,11 +48,7 @@ $ go mod get
 1. Create a JSON file (mails.json) with an array of email addresses. Example:
 
 ```json
-[
-    "spam@example.com", 
-    "junk@example.com", 
-    "promo@example.com"
-]
+["spam@example.com", "junk@example.com", "promo@example.com"]
 ```
 
 2. Run the program:
@@ -57,7 +57,8 @@ $ go mod get
 $ go run main.go
 ```
 
-> ℹ️ During the first run, the program will ask you to visit a URL and authenticate with your Google account. Enter the authorization code in the callback URL to proceed.
+> [!NOTE]
+> During the first run, the program will ask you to visit a URL and authenticate with your Google account. Enter the authorization code in the callback URL to proceed.
 
 ## License
 
