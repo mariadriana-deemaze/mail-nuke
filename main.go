@@ -59,6 +59,34 @@ func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
 	return token
 }
 
+func deleteEmailsBySenders(srv *gmail.Service, senders []string) {
+	user := "me"
+	for _, sender := range senders {
+		query := fmt.Sprintf("from:%s", sender)
+		fmt.Printf("Searching for emails from: %s\n", sender)
+
+		messages, err := srv.Users.Messages.List(user).Q(query).Do()
+		if err != nil {
+			log.Printf("Unable to retrieve messages for sender %s: %v", sender, err)
+			continue
+		}
+
+		if len(messages.Messages) == 0 {
+			fmt.Printf("No messages found from %s\n", sender)
+			continue
+		}
+
+		for _, msg := range messages.Messages {
+			err := srv.Users.Messages.Delete(user, msg.Id).Do()
+			if err != nil {
+				log.Printf("Unable to delete message ID %s: %v", msg.Id, err)
+			} else {
+				fmt.Printf("Deleted message ID %s from sender %s\n", msg.Id, sender)
+			}
+		}
+	}
+}
+
 func main() {
 	ctx := context.Background()
 
@@ -79,18 +107,6 @@ func main() {
 		log.Fatalf("Unable to create Gmail client: %v", err)
 	}
 
-	user := "me"
-	r, err := gmailService.Users.Messages.List(user).Do()
-	if err != nil {
-		log.Fatalf("Unable to retrieve messages: %v", err)
-	}
-
-	fmt.Println("Messages:")
-	if len(r.Messages) == 0 {
-		fmt.Println("No messages found.")
-	} else {
-		for _, m := range r.Messages {
-			fmt.Printf("- Message ID: %s\n", m.Id)
-		}
-	}
+	spammySenders := []string{"spammy@gmail.com"}
+	deleteEmailsBySenders(gmailService, spammySenders)
 }
